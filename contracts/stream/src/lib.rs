@@ -317,12 +317,16 @@ impl FluxoraStream {
 
         stream.withdrawn_amount += withdrawable;
 
-        // If the full deposit has been streamed and withdrawn, mark completed
-        let now = env.ledger().timestamp();
-        if stream.status == StreamStatus::Active
-            && now >= stream.end_time
-            && stream.withdrawn_amount == stream.deposit_amount
-        {
+        // // If the full deposit has been streamed and withdrawn, mark completed
+        // let now = env.ledger().timestamp();
+        // if stream.status == StreamStatus::Active
+        //     && now >= stream.end_time
+        //     && stream.withdrawn_amount == stream.deposit_amount
+        // {
+        //     stream.status = StreamStatus::Completed;
+        // }
+
+        if stream.withdrawn_amount >= stream.deposit_amount {
             stream.status = StreamStatus::Completed;
         }
 
