@@ -1,7 +1,10 @@
 #[cfg(test)]
 extern crate std;
 
+use core::u64;
+
 use soroban_sdk::{
+    log,
     testutils::{Address as _, Ledger},
     token::{Client as TokenClient, StellarAssetClient},
     Address, Env,
@@ -13,16 +16,17 @@ use crate::{FluxoraStream, FluxoraStreamClient, StreamStatus};
 // Test helpers
 // ---------------------------------------------------------------------------
 
-struct TestContext {
+struct TestContext<'a> {
     env: Env,
     contract_id: Address,
     token_id: Address,
     admin: Address,
     sender: Address,
     recipient: Address,
+    sac: StellarAssetClient<'a>,
 }
 
-impl TestContext {
+impl<'a> TestContext<'a> {
     fn setup() -> Self {
         let env = Env::default();
         env.mock_all_auths();
@@ -53,6 +57,7 @@ impl TestContext {
             admin,
             sender,
             recipient,
+            sac,
         }
     }
 
@@ -89,6 +94,32 @@ impl TestContext {
             &0u64,
             &500u64, // cliff at t=500
             &1000u64,
+        )
+    }
+
+    fn create_max_rate_stream(&self) -> u64 {
+        self.env.ledger().set_timestamp(0);
+        self.client().create_stream(
+            &self.sender,
+            &self.recipient,
+            &i128::MAX,
+            &(i128::MAX / 1_000_000),
+            &0,
+            &0u64,
+            &u64::MAX,
+        )
+    }
+
+    fn create_half_max_rate_stream(&self) -> u64 {
+        self.env.ledger().set_timestamp(0);
+        self.client().create_stream(
+            &self.sender,
+            &self.recipient,
+            &1_000_000_i128,
+            &(i128::MAX / 10),
+            &1_700_000_000,
+            &1_750_000_000u64,
+            &1_800_000_000,
         )
     }
 }
@@ -203,6 +234,34 @@ fn test_calculate_accrued_after_cliff() {
         accrued, 600,
         "600s × 1/s = 600 (uses start_time, not cliff)"
     );
+}
+
+#[test]
+fn test_calculate_accrued_max_values() {
+    let ctx = TestContext::setup();
+    ctx.sac.mint(&ctx.sender, &(i128::MAX - 10_000_i128));
+    let stream_id = ctx.create_max_rate_stream();
+
+    ctx.env.ledger().set_timestamp(u64::MAX);
+
+    let accrued = ctx.client().calculate_accrued(&stream_id);
+    assert_eq!(accrued as u64, u64::MAX, "accrued should be max");
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert!(accrued <= state.deposit_amount);
+    assert!(accrued >= 0);
+}
+
+#[test]
+fn test_calculate_accrued_overflow_protection() {
+    let ctx = TestContext::setup();
+    ctx.sac.mint(&ctx.sender, &(i128::MAX - 10_000_i128));
+    let stream_id = ctx.create_half_max_rate_stream();
+
+    ctx.env.ledger().set_timestamp(1_800_000_000);
+
+    let accrued = ctx.client().calculate_accrued(&stream_id);
+    assert_eq!(accrued, 1_000_000); // capped, no panic/overflow
 }
 
 // ---------------------------------------------------------------------------
