@@ -278,6 +278,11 @@ impl FluxoraStream {
     /// - If there is nothing to withdraw (accrued == withdrawn).
     pub fn withdraw(env: Env, stream_id: u64) -> i128 {
         let mut stream = load_stream(&env, stream_id);
+
+        // Enforce recipient-only authorization: only the stream's recipient can withdraw
+        // This is equivalent to checking env.invoker() == stream.recipient
+        // require_auth() ensures only the recipient can authorize this call,
+        // preventing anyone from withdrawing on behalf of the recipient
         stream.recipient.require_auth();
 
         // Reject if stream is completed (#37)
