@@ -1286,7 +1286,7 @@ fn test_pause_stream_recipient_unauthorized() {
                 0u64,
                 1000u64,
             )
-            .into_val(&ctx.env),
+                .into_val(&ctx.env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &ctx.token_id,
                 fn_name: "transfer",
@@ -1342,7 +1342,7 @@ fn test_pause_stream_third_party_unauthorized() {
                 0u64,
                 1000u64,
             )
-            .into_val(&ctx.env),
+                .into_val(&ctx.env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &ctx.token_id,
                 fn_name: "transfer",
@@ -1397,7 +1397,7 @@ fn test_pause_stream_sender_success() {
                 0u64,
                 1000u64,
             )
-            .into_val(&ctx.env),
+                .into_val(&ctx.env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &ctx.token_id,
                 fn_name: "transfer",
@@ -1455,7 +1455,7 @@ fn test_pause_stream_admin_success() {
                 0u64,
                 1000u64,
             )
-            .into_val(&ctx.env),
+                .into_val(&ctx.env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &ctx.token_id,
                 fn_name: "transfer",
@@ -1515,7 +1515,7 @@ fn test_cancel_stream_recipient_unauthorized() {
                 0u64,
                 1000u64,
             )
-            .into_val(&ctx.env),
+                .into_val(&ctx.env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &ctx.token_id,
                 fn_name: "transfer",
@@ -1570,7 +1570,7 @@ fn test_cancel_stream_third_party_unauthorized() {
                 0u64,
                 1000u64,
             )
-            .into_val(&ctx.env),
+                .into_val(&ctx.env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &ctx.token_id,
                 fn_name: "transfer",
@@ -1625,7 +1625,7 @@ fn test_cancel_stream_sender_success() {
                 0u64,
                 1000u64,
             )
-            .into_val(&ctx.env),
+                .into_val(&ctx.env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &ctx.token_id,
                 fn_name: "transfer",
@@ -1681,7 +1681,7 @@ fn test_cancel_stream_admin_success() {
                 0u64,
                 1000u64,
             )
-            .into_val(&ctx.env),
+                .into_val(&ctx.env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &ctx.token_id,
                 fn_name: "transfer",
