@@ -62,6 +62,50 @@ impl<'a> TestContext<'a> {
         }
     }
 
+    /// Setup context without mock_all_auths(), for explicit auth testing
+    fn setup_strict() -> Self {
+        let env = Env::default();
+
+        let contract_id = env.register_contract(None, FluxoraStream);
+
+        let token_admin = Address::generate(&env);
+        let token_id = env
+            .register_stellar_asset_contract_v2(token_admin.clone())
+            .address();
+
+        let admin = Address::generate(&env);
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+
+        let client = FluxoraStreamClient::new(&env, &contract_id);
+        client.init(&token_id, &admin);
+
+        let sac = StellarAssetClient::new(&env, &token_id);
+
+        // Mock the minting auth since mock_all_auths is not enabled.
+        use soroban_sdk::{testutils::MockAuth, testutils::MockAuthInvoke, IntoVal};
+        env.mock_auths(&[MockAuth {
+            address: &token_admin,
+            invoke: &MockAuthInvoke {
+                contract: &token_id,
+                fn_name: "mint",
+                args: (&sender, 10_000_i128).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        sac.mint(&sender, &10_000_i128);
+
+        TestContext {
+            env,
+            contract_id,
+            token_id,
+            admin,
+            sender,
+            recipient,
+            sac,
+        }
+    }
+
     fn client(&self) -> FluxoraStreamClient<'_> {
         FluxoraStreamClient::new(&self.env, &self.contract_id)
     }
