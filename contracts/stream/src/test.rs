@@ -99,9 +99,9 @@ impl<'a> TestContext<'a> {
             env,
             contract_id,
             token_id,
+            admin,
             sender,
             recipient,
-            admin,
             sac,
         }
     }
@@ -1212,6 +1212,43 @@ fn test_multiple_streams_independent() {
 }
 
 // ---------------------------------------------------------------------------
+// Tests — Issue #16: Auth Enforcement (Sender or Admin only)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic]
+fn test_pause_stream_as_recipient_fails() {
+    let ctx = TestContext::setup();
+    let stream_id = ctx.create_default_stream();
+
+    let env = Env::default();
+    let client = FluxoraStreamClient::new(&env, &ctx.contract_id);
+
+    client.pause_stream(&stream_id);
+}
+
+#[test]
+#[should_panic]
+fn test_cancel_stream_as_random_address_fails() {
+    let ctx = TestContext::setup();
+    let stream_id = ctx.create_default_stream();
+
+    let env = Env::default();
+    let client = FluxoraStreamClient::new(&env, &ctx.contract_id);
+
+    client.cancel_stream(&stream_id);
+}
+
+#[test]
+fn test_admin_can_pause_stream() {
+    let ctx = TestContext::setup();
+    let stream_id = ctx.create_default_stream();
+
+    ctx.client().pause_stream(&stream_id);
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.status, StreamStatus::Paused);
+}
 // Tests — Events
 // ---------------------------------------------------------------------------
 
@@ -1759,6 +1796,29 @@ fn test_calculate_accrued_exactly_at_cliff() {
     );
 }
 
+#[test]
+fn test_admin_can_pause_via_admin_path() {
+    let ctx = TestContext::setup();
+    let stream_id = ctx.create_default_stream();
+
+    // Verification: Admin can successfully pause via the admin entrypoint
+    ctx.client().pause_stream_as_admin(&stream_id);
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.status, StreamStatus::Paused);
+}
+
+#[test]
+fn test_cancel_stream_as_admin_works() {
+    let ctx = TestContext::setup();
+    let stream_id = ctx.create_default_stream();
+
+    // Verification: Admin can still intervene via the admin path
+    ctx.client().cancel_stream_as_admin(&stream_id);
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.status, StreamStatus::Cancelled);
+}
 // ---------------------------------------------------------------------------
 // Tests — get_stream_state
 // ---------------------------------------------------------------------------
