@@ -8,6 +8,7 @@ Soroban smart contracts for the Fluxora treasury streaming protocol on Stellar. 
 - **Data model** — `Stream` (sender, recipient, deposit_amount, rate_per_second, start/cliff/end time, withdrawn_amount, status).
 - **Status** — Active, Paused, Completed, Cancelled.
 - **Methods (stubs)** — `init`, `create_stream`, `pause_stream`, `resume_stream`, `cancel_stream`, `withdraw`, `calculate_accrued`, `get_stream_state`.
+- **Cancel semantics** — `cancel_stream` is valid only in `Active` or `Paused`; `Completed` and `Cancelled` return `InvalidState`.
 
 Implementation is scaffolded; storage, token transfers, and events are left for you to complete.
 

@@ -1,6 +1,9 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Env};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
+    Address, Env,
+};
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -29,6 +32,13 @@ pub enum StreamEvent {
     Paused(u64),
     Resumed(u64),
     Cancelled(u64),
+}
+
+#[contracterror]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum ContractError {
+    InvalidState = 1,
 }
 
 #[contracttype]
@@ -260,11 +270,7 @@ impl FluxoraStream {
     pub fn cancel_stream(env: Env, stream_id: u64) {
         let mut stream = load_stream(&env, stream_id);
         Self::require_sender_or_admin(&env, &stream.sender);
-
-        assert!(
-            stream.status == StreamStatus::Active || stream.status == StreamStatus::Paused,
-            "stream must be active or paused to cancel"
-        );
+        Self::require_cancellable_status(&env, stream.status);
 
         let accrued = Self::calculate_accrued(env.clone(), stream_id);
         let unstreamed = stream.deposit_amount - accrued;
@@ -393,6 +399,12 @@ impl FluxoraStream {
             admin.require_auth();
         }
     }
+
+    fn require_cancellable_status(env: &Env, status: StreamStatus) {
+        if status != StreamStatus::Active && status != StreamStatus::Paused {
+            panic_with_error!(env, ContractError::InvalidState);
+        }
+    }
 }
 
 #[contractimpl]
@@ -403,11 +415,7 @@ impl FluxoraStream {
         admin.require_auth();
 
         let mut stream = load_stream(&env, stream_id);
-
-        assert!(
-            stream.status == StreamStatus::Active || stream.status == StreamStatus::Paused,
-            "stream must be active or paused to cancel"
-        );
+        Self::require_cancellable_status(&env, stream.status);
 
         let accrued = Self::calculate_accrued(env.clone(), stream_id);
         let unstreamed = stream.deposit_amount - accrued;

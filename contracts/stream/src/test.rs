@@ -21,7 +21,6 @@ struct TestContext<'a> {
     admin: Address,
     sender: Address,
     recipient: Address,
-    admin: Address,
     sac: StellarAssetClient<'a>,
 }
 
@@ -58,7 +57,6 @@ impl<'a> TestContext<'a> {
             admin,
             sender,
             recipient,
-            admin,
             sac,
         }
     }
@@ -615,7 +613,7 @@ fn test_cancel_stream_as_admin() {
 }
 
 #[test]
-#[should_panic(expected = "stream must be active or paused to cancel")]
+#[should_panic(expected = "Error(Contract, #1)")]
 fn test_cancel_already_cancelled_panics() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
@@ -624,7 +622,7 @@ fn test_cancel_already_cancelled_panics() {
 }
 
 #[test]
-#[should_panic(expected = "stream must be active or paused to cancel")]
+#[should_panic(expected = "Error(Contract, #1)")]
 fn test_cancel_completed_stream_panics() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
@@ -634,13 +632,20 @@ fn test_cancel_completed_stream_panics() {
 }
 
 #[test]
-fn test_cancel_paused_stream() {
+fn test_cancel_stream_allows_active_or_paused() {
     let ctx = TestContext::setup();
-    let stream_id = ctx.create_default_stream();
-    ctx.client().pause_stream(&stream_id);
-    ctx.client().cancel_stream(&stream_id);
-    let state = ctx.client().get_stream_state(&stream_id);
-    assert_eq!(state.status, StreamStatus::Cancelled);
+    let active_stream_id = ctx.create_default_stream();
+    let paused_stream_id = ctx.create_default_stream();
+
+    ctx.client().pause_stream(&paused_stream_id);
+
+    ctx.client().cancel_stream(&active_stream_id);
+    ctx.client().cancel_stream(&paused_stream_id);
+
+    let active_state = ctx.client().get_stream_state(&active_stream_id);
+    let paused_state = ctx.client().get_stream_state(&paused_stream_id);
+    assert_eq!(active_state.status, StreamStatus::Cancelled);
+    assert_eq!(paused_state.status, StreamStatus::Cancelled);
 }
 
 // ---------------------------------------------------------------------------
