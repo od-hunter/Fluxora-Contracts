@@ -5375,6 +5375,7 @@ fn test_stream_id_stability_after_state_changes() {
         id3, 3,
         "counter must continue monotonically after state mutations"
     );
+}
 
 /// Test: Verify returned amount matches withdrawn_amount increment
 /// Ensures internal accounting matches external transfer amount
