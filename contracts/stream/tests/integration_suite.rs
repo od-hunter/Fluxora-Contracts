@@ -805,7 +805,10 @@ fn integration_stream_ids_are_unique_and_sequential() {
         );
 
         // Returned id must be sequential
-        assert_eq!(id, expected, "stream {expected}: id must equal counter value");
+        assert_eq!(
+            id, expected,
+            "stream {expected}: id must equal counter value"
+        );
 
         // Id stored inside the struct must match the returned id
         let state = ctx.client().get_stream_state(&id);

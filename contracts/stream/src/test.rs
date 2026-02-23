@@ -3525,13 +3525,31 @@ fn test_stream_id_increments_by_one() {
     ctx.env.ledger().set_timestamp(0);
 
     let id0 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &100_i128, &1_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
     let id1 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &100_i128, &1_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
     let id2 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &100_i128, &1_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
 
     assert_eq!(id0, 0, "first id must be 0");
@@ -3615,7 +3633,13 @@ fn test_failed_create_stream_does_not_advance_counter() {
 
     // First successful stream → id = 0
     let id0 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &100_i128, &1_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
     assert_eq!(id0, 0);
 
@@ -3635,7 +3659,13 @@ fn test_failed_create_stream_does_not_advance_counter() {
 
     // Next successful stream must still be id = 1, not 2
     let id1 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &100_i128, &1_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
     assert_eq!(
         id1, 1,
@@ -3656,13 +3686,31 @@ fn test_stream_ids_unique_across_different_senders() {
     ctx.sac.mint(&sender2, &1_000_i128);
 
     let id_a = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &100_i128, &1_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
     let id_b = ctx.client().create_stream(
-        &sender2, &recipient2, &100_i128, &1_i128, &0u64, &0u64, &100u64,
+        &sender2,
+        &recipient2,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
     let id_c = ctx.client().create_stream(
-        &ctx.sender, &recipient2, &100_i128, &1_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &recipient2,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
 
     assert_eq!(id_a, 0, "first stream (sender1→recipient1) must be 0");
@@ -3682,13 +3730,31 @@ fn test_stream_id_stability_after_state_changes() {
     ctx.env.ledger().set_timestamp(0);
 
     let id0 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &200_i128, &2_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &200_i128,
+        &2_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
     let id1 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &200_i128, &2_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &200_i128,
+        &2_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
     let id2 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &200_i128, &2_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &200_i128,
+        &2_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
 
     // Mutate stream 1: pause then cancel
@@ -3702,7 +3768,16 @@ fn test_stream_id_stability_after_state_changes() {
 
     // The global counter must continue from 3
     let id3 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &200_i128, &2_i128, &0u64, &0u64, &100u64,
+        &ctx.sender,
+        &ctx.recipient,
+        &200_i128,
+        &2_i128,
+        &0u64,
+        &0u64,
+        &100u64,
     );
-    assert_eq!(id3, 3, "counter must continue monotonically after state mutations");
+    assert_eq!(
+        id3, 3,
+        "counter must continue monotonically after state mutations"
+    );
 }
