@@ -4234,6 +4234,43 @@ fn test_withdraw_zero_no_time_elapsed() {
     ctx.client().withdraw(&stream_id);
 }
 
+/// Issue #128 — withdraw when accrued equals withdrawn (zero withdrawable)
+/// Expected: second withdraw panics with "nothing to withdraw"
+/// and no token transfer occurs (recipient balance unchanged).
+#[test]
+#[should_panic(expected = "nothing to withdraw")]
+fn test_withdraw_when_accrued_equals_withdrawn_zero_withdrawable() {
+    let ctx = TestContext::setup();
+    let stream_id = ctx.create_default_stream();
+
+    // Advance time to t=600: accrued = 600, withdrawn = 0
+    ctx.env.ledger().set_timestamp(600);
+
+    // First withdraw: drains the full accrued amount
+    let first_withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(first_withdrawn, 600, "first withdraw should return 600");
+
+    // Verify state: withdrawn_amount now equals accrued (both 600)
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.withdrawn_amount, 600);
+    assert_eq!(state.status, StreamStatus::Active); // still active, stream not done
+
+    // Verify no second transfer occurred by recording recipient balance
+    let recipient_balance_after_first = ctx.token().balance(&ctx.recipient);
+    assert_eq!(recipient_balance_after_first, 600);
+
+    // Second withdraw at same timestamp: accrued (600) - withdrawn (600) = 0
+    // Must panic with "nothing to withdraw" and must NOT transfer any tokens
+    ctx.client().withdraw(&stream_id);
+
+    // If we somehow reach here (we shouldn't), verify no extra tokens moved
+    let recipient_balance_after_second = ctx.token().balance(&ctx.recipient);
+    assert_eq!(
+        recipient_balance_after_second, recipient_balance_after_first,
+        "no tokens should transfer on zero-withdrawable call"
+    );
+}
+
 /// Test withdraw when cancelled with zero accrued
 /// Should panic with "nothing to withdraw"
 #[test]
