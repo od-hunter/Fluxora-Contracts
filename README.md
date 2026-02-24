@@ -11,6 +11,8 @@ Soroban smart contracts for the Fluxora treasury streaming protocol on Stellar. 
 
 Implementation is scaffolded; storage, token transfers, and events are left for you to complete.
 
+**Documentation:** [Audit preparation](docs/audit.md) (entrypoints and invariants for auditors).
+
 ## Tech stack
 
 - Rust (edition 2021)
