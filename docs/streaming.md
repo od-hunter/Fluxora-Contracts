@@ -167,3 +167,7 @@ All failures use `panic!` / `assert!`. No custom error enum.
 | `"stream is not active"` | `pause_stream_as_admin` | Admin pause non-active |
 | `"stream is not paused"` | `resume_stream_as_admin` | Admin resume non-paused |
 | `"contract not initialised: missing config"` | Functions requiring config | Config missing |
+
+## Error Reference
+For a full list of contract errors, see [error.md](./error.md).
+
