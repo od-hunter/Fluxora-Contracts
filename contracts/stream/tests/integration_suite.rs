@@ -2,9 +2,10 @@ extern crate std;
 
 use fluxora_stream::{FluxoraStream, FluxoraStreamClient, StreamStatus};
 use soroban_sdk::{
+    log,
     testutils::{Address as _, Ledger},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env,
+    Address, Env, Vec,
 };
 
 struct TestContext<'a> {
@@ -251,7 +252,8 @@ fn full_lifecycle_create_withdraw_to_completion() {
 #[should_panic]
 fn get_stream_state_unknown_id_panics() {
     let ctx = TestContext::setup();
-    ctx.client().get_stream_state(&99);
+    let result = ctx.client().try_get_stream_state(&99);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -774,6 +776,120 @@ fn integration_cancel_after_cliff_partial_refund() {
     assert_eq!(ctx.token.balance(&ctx.contract_id), 0);
 }
 
+// ---------------------------------------------------------------------------
+// Integration tests — stream_id generation and uniqueness
+// ---------------------------------------------------------------------------
+
+/// Creating N streams must produce IDs 0, 1, 2, …, N-1 with no gaps or duplicates.
+///
+/// Verifies:
+/// - Counter starts at 0 after init
+/// - Each create_stream call advances the counter by exactly 1
+/// - The returned stream_id matches the value stored in the Stream struct
+/// - No two streams share the same id
+#[test]
+fn integration_stream_ids_are_unique_and_sequential() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    const N: u64 = 10;
+    let mut collected: std::vec::Vec<u64> = std::vec::Vec::new();
+
+    for expected in 0..N {
+        let id = ctx.client().create_stream(
+            &ctx.sender,
+            &ctx.recipient,
+            &100_i128,
+            &1_i128,
+            &0u64,
+            &0u64,
+            &100u64,
+        );
+
+        // Returned id must be sequential
+        assert_eq!(
+            id, expected,
+            "stream {expected}: id must equal counter value"
+        );
+
+        // Id stored inside the struct must match the returned id
+        let state = ctx.client().get_stream_state(&id);
+        assert_eq!(
+            state.stream_id, id,
+            "stream {expected}: stored stream_id must equal returned id"
+        );
+
+        collected.push(id);
+    }
+
+    // Pairwise uniqueness — no duplicate ids
+    for i in 0..collected.len() {
+        for j in (i + 1)..collected.len() {
+            assert_ne!(
+                collected[i], collected[j],
+                "stream_ids at positions {i} and {j} must be unique"
+            );
+        }
+    }
+}
+
+/// A create_stream call that fails validation must NOT advance NextStreamId;
+/// the following successful call must receive the id that would have been next.
+///
+/// Verifies:
+/// - Validation failures (underfunded deposit) leave the counter unchanged
+/// - Subsequent successful calls receive the correct sequential id
+#[test]
+fn integration_failed_creation_does_not_advance_counter() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    // First successful stream → id = 0
+    let id0 = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+    assert_eq!(id0, 0, "first stream must be id 0");
+
+    // Attempt a stream with an underfunded deposit → must panic
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ctx.client().create_stream(
+            &ctx.sender,
+            &ctx.recipient,
+            &1_i128, // deposit < rate * duration
+            &1_i128,
+            &0u64,
+            &0u64,
+            &1000u64,
+        );
+    }));
+    assert!(result.is_err(), "underfunded create_stream must panic");
+
+    // Next successful stream must be id = 1, not 2
+    let id1 = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+    assert_eq!(
+        id1, 1,
+        "counter must not advance after a failed create_stream"
+    );
+
+    // Verify both streams are independently retrievable
+    assert_eq!(ctx.client().get_stream_state(&id0).stream_id, 0);
+    assert_eq!(ctx.client().get_stream_state(&id1).stream_id, 1);
+}
+
 /// Integration test: create stream → pause → cancel → correct refund.
 ///
 /// This test covers:
@@ -893,7 +1009,10 @@ fn integration_pause_resume_withdraw_lifecycle() {
 
     let state = ctx.client().get_stream_state(&stream_id);
     assert_eq!(state.status, StreamStatus::Paused);
-    assert_eq!(state.withdrawn_amount, 0, "no withdrawals should occur during pause");
+    assert_eq!(
+        state.withdrawn_amount, 0,
+        "no withdrawals should occur during pause"
+    );
 
     // -----------------------------------------------------------------------
     // Phase 3: Advance to t=700 while paused, verify accrual continues
@@ -902,15 +1021,26 @@ fn integration_pause_resume_withdraw_lifecycle() {
 
     // Verify accrual continues during pause (time-based, not status-based)
     let accrued_at_700 = ctx.client().calculate_accrued(&stream_id);
-    assert_eq!(accrued_at_700, 700, "accrual must continue during pause period");
+    assert_eq!(
+        accrued_at_700, 700,
+        "accrual must continue during pause period"
+    );
 
     // Attempt to withdraw while paused — should fail
     let withdrawal_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         ctx.client().withdraw(&stream_id);
     }));
+    let err = withdrawal_result.expect_err("withdrawal should panic while stream is paused");
+    // Ensure the panic reason matches the expected paused-stream invariant
+    let panic_msg = err
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| err.downcast_ref::<String>().map(|s| s.as_str()))
+        .unwrap_or("<non-string panic payload>");
     assert!(
-        withdrawal_result.is_err(),
-        "withdrawal should fail while stream is paused"
+        panic_msg.contains("cannot withdraw from paused stream"),
+        "unexpected panic message when withdrawing from paused stream: {}",
+        panic_msg
     );
 
     // Verify stream still paused and no tokens transferred
@@ -1021,7 +1151,10 @@ fn integration_multiple_pause_resume_cycles() {
 
     ctx.env.ledger().set_timestamp(1800);
     let accrued_at_1800 = ctx.client().calculate_accrued(&stream_id);
-    assert_eq!(accrued_at_1800, 1800, "accrual continues through multiple pauses");
+    assert_eq!(
+        accrued_at_1800, 1800,
+        "accrual continues through multiple pauses"
+    );
 
     ctx.client().resume_stream(&stream_id);
     let state = ctx.client().get_stream_state(&stream_id);
@@ -1586,3 +1719,60 @@ fn integration_same_sender_same_recipient_multiple_streams() {
     assert_eq!(total, 10_000, "total tokens conserved");
 }
 
+#[test]
+fn test_create_many_streams_from_same_sender() {
+    let ctx = TestContext::setup();
+    ctx.env.budget().reset_default();
+
+    ctx.env.ledger().set_timestamp(0);
+
+    let counter_stop = 50;
+    let mut counter = 0;
+    let mut stream_vec = Vec::new(&ctx.env);
+    let deposit = 10_i128;
+    let rate = 1_i128;
+    let start = 0u64;
+    let cliff = 0u64;
+    let end = 10u64;
+    loop {
+        let recipient = Address::generate(&ctx.env);
+        let stream_id = ctx.client().create_stream(
+            &ctx.sender,
+            &recipient,
+            &deposit,
+            &rate,
+            &start,
+            &cliff,
+            &end,
+        );
+
+        let state = ctx.client().get_stream_state(&stream_id);
+        assert_eq!(state.stream_id, stream_id);
+        assert_eq!(state.stream_id, counter);
+        assert_eq!(state.sender, ctx.sender);
+        assert_eq!(state.recipient, recipient);
+        assert_eq!(state.deposit_amount, deposit);
+        assert_eq!(state.rate_per_second, rate);
+        assert_eq!(state.start_time, start);
+        assert_eq!(state.cliff_time, cliff);
+        assert_eq!(state.end_time, end);
+        assert_eq!(state.withdrawn_amount, 0);
+        assert_eq!(state.status, StreamStatus::Active);
+
+        counter += 1;
+
+        stream_vec.push_back(stream_id);
+        if counter == counter_stop {
+            break;
+        }
+    }
+
+    let cpu_insns = ctx.env.budget().cpu_instruction_cost();
+    log!(&ctx.env, "cpu_insns", cpu_insns);
+    assert!(cpu_insns == 19_631_671);
+
+    // Check memory bytes consumed
+    let mem_bytes = ctx.env.budget().memory_bytes_cost();
+    log!(&ctx.env, "mem_bytes", mem_bytes);
+    assert!(mem_bytes == 4_090_035);
+}
