@@ -165,6 +165,7 @@ impl FluxoraStream {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn persist_new_stream(
         env: &Env,
         sender: Address,
