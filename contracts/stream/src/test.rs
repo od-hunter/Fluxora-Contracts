@@ -213,6 +213,23 @@ fn test_get_config_before_init_fails() {
     client.get_config();
 }
 
+/// Test that get_config panics with clear error when contract is not initialized.
+/// This guards against using an uninitialized contract and documents expected behavior.
+///
+/// Security: Prevents operations on uninitialized contract state.
+/// The panic message "contract not initialised: missing config" provides clear
+/// feedback to integrators that init() must be called first.
+#[test]
+#[should_panic(expected = "contract not initialised: missing config")]
+fn test_get_config_uninitialized_contract_panics() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, FluxoraStream);
+    let client = FluxoraStreamClient::new(&env, &contract_id);
+
+    // Calling get_config before init must panic with clear error message
+    client.get_config();
+}
+
 #[test]
 fn test_init_stores_config() {
     let env = Env::default();
