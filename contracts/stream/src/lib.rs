@@ -2,7 +2,9 @@
 
 mod accrual;
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Env};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, panic_with_error, symbol_short, token, Address, Env,
+};
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -30,6 +32,7 @@ pub enum StreamStatus {
 #[repr(u32)]
 pub enum ContractError {
     StreamNotFound = 1,
+    InvalidState = 2,
 }
 
 #[contracttype]
@@ -440,11 +443,7 @@ impl FluxoraStream {
     pub fn cancel_stream(env: Env, stream_id: u64) -> Result<(), ContractError> {
         let mut stream = load_stream(&env, stream_id)?;
         Self::require_sender_or_admin(&env, &stream.sender);
-
-        assert!(
-            stream.status == StreamStatus::Active || stream.status == StreamStatus::Paused,
-            "stream must be active or paused to cancel"
-        );
+        Self::require_cancellable_status(&env, stream.status);
 
         let accrued = Self::calculate_accrued(env.clone(), stream_id)?;
         let unstreamed = stream.deposit_amount - accrued;
@@ -717,6 +716,12 @@ impl FluxoraStream {
         // Only the sender can manage their own stream via these paths.
         // Admin overrides are handled by the 'as_admin' specific functions.
         sender.require_auth();
+    }
+
+    fn require_cancellable_status(env: &Env, status: StreamStatus) {
+        if status != StreamStatus::Active && status != StreamStatus::Paused {
+            panic_with_error!(env, ContractError::InvalidState);
+        }
     }
 }
 
