@@ -5293,7 +5293,7 @@ fn test_create_stream_large_rate_overflow_in_accrual() {
     let accrued = ctx.client().calculate_accrued(&stream_id);
     assert!(accrued <= deposit_amount); // must not exceed deposit
     assert!(accrued >= 0);
-    assert_eq!(accrued, deposit_amount-1);
+    assert_eq!(accrued, deposit_amount - 1);
 }
 
 #[test]
