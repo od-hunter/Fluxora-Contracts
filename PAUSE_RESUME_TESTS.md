@@ -11,12 +11,10 @@ This document summarizes the four new integration tests added for the pause/resu
 ## Test Summary
 
 ### ✅ All Tests Passing
-- **152 unit tests**: All pass
-- **25 integration tests**: All pass (including 4 new tests)
-- **Total test coverage**: > 95%
+- All relevant unit tests are passing in CI (see project CI logs for full details).
+- **27 integration tests**: All pass in `test_output_multiple_streams.txt` (including the 4 new pause/resume/withdraw lifecycle tests).
 
 ### New Integration Tests
-
 #### 1. `integration_pause_resume_withdraw_lifecycle`
 
 **Purpose:** Comprehensive end-to-end test of the pause/resume/withdraw flow.
