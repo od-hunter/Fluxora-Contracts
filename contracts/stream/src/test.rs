@@ -2341,14 +2341,16 @@ fn test_withdraw_from_paused_stream_completes_if_full() {
     ctx.client().withdraw(&stream_id);
 }
 
+/// Test withdraw when withdrawable is zero (nothing to withdraw).
+/// Should return 0 without transfer or state change (idempotent).
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_nothing_panics() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
 
     ctx.env.ledger().set_timestamp(0);
-    ctx.client().withdraw(&stream_id);
+    let withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(withdrawn, 0, "should return 0 when nothing to withdraw");
 }
 
 #[test]
@@ -2437,13 +2439,14 @@ fn test_withdraw_mid_stream() {
     assert_eq!(amount, 500);
 }
 
+/// Test withdraw before cliff returns 0 (idempotent behavior).
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_before_cliff_panics() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_cliff_stream();
     ctx.env.ledger().set_timestamp(100);
-    ctx.client().withdraw(&stream_id);
+    let withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(withdrawn, 0, "should return 0 before cliff");
 }
 
 /// Verify that withdraw enforces recipient-only authorization.
@@ -4438,17 +4441,22 @@ fn test_resume_stream_as_admin_not_found() {
 // Tests — Issue: withdraw zero and excess handling
 // ---------------------------------------------------------------------------
 
-/// Test withdraw when accrued - withdrawn = 0 before cliff
-/// Should panic with "nothing to withdraw"
+/// Test withdraw when withdrawable is zero before cliff.
+/// Should return 0 without transfer or state change (idempotent).
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_zero_before_cliff() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_cliff_stream(); // cliff at t=500
 
     // Before cliff, accrued = 0, withdrawn = 0, so withdrawable = 0
     ctx.env.ledger().set_timestamp(100);
-    ctx.client().withdraw(&stream_id);
+    let withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(withdrawn, 0, "should return 0 before cliff");
+
+    // Verify no state change
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.withdrawn_amount, 0);
+    assert_eq!(state.status, StreamStatus::Active);
 }
 
 /// Test withdraw when accrued - withdrawn = 0 after full withdrawal
@@ -4472,23 +4480,27 @@ fn test_withdraw_zero_after_full_withdrawal() {
     ctx.client().withdraw(&stream_id);
 }
 
-/// Test withdraw when accrued - withdrawn = 0 at start time (no cliff)
-/// Should panic with "nothing to withdraw"
+/// Test withdraw when withdrawable is zero at start time (no cliff).
+/// Should return 0 without transfer or state change (idempotent).
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_zero_at_start_time() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
 
     // At start time, accrued = 0, withdrawn = 0, so withdrawable = 0
     ctx.env.ledger().set_timestamp(0);
-    ctx.client().withdraw(&stream_id);
+    let withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(withdrawn, 0, "should return 0 at start time");
+
+    // Verify no state change
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.withdrawn_amount, 0);
+    assert_eq!(state.status, StreamStatus::Active);
 }
 
-/// Test withdraw immediately after previous withdrawal with no time elapsed
-/// Should panic with "nothing to withdraw"
+/// Test withdraw immediately after previous withdrawal with no time elapsed.
+/// Should return 0 without transfer or state change (idempotent).
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_zero_no_time_elapsed() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
@@ -4498,15 +4510,17 @@ fn test_withdraw_zero_no_time_elapsed() {
     let withdrawn = ctx.client().withdraw(&stream_id);
     assert_eq!(withdrawn, 500);
 
-    // Try to withdraw again at same timestamp - should panic
-    ctx.client().withdraw(&stream_id);
+    // Try to withdraw again at same timestamp - should return 0
+    let withdrawn2 = ctx.client().withdraw(&stream_id);
+    assert_eq!(withdrawn2, 0, "should return 0 when no time elapsed");
+
+    // Verify no additional state change
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.withdrawn_amount, 500);
 }
 
-/// Issue #128 — withdraw when accrued equals withdrawn (zero withdrawable)
-/// Expected: second withdraw panics with "nothing to withdraw"
-/// and no token transfer occurs (recipient balance unchanged).
+/// Expected: second withdraw returns 0 (idempotent)
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_when_accrued_equals_withdrawn_zero_withdrawable() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
@@ -4528,10 +4542,11 @@ fn test_withdraw_when_accrued_equals_withdrawn_zero_withdrawable() {
     assert_eq!(recipient_balance_after_first, 600);
 
     // Second withdraw at same timestamp: accrued (600) - withdrawn (600) = 0
-    // Must panic with "nothing to withdraw" and must NOT transfer any tokens
-    ctx.client().withdraw(&stream_id);
+    // Should return 0 and must NOT transfer any tokens
+    let second_withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(second_withdrawn, 0);
 
-    // If we somehow reach here (we shouldn't), verify no extra tokens moved
+    // Verify no extra tokens moved
     let recipient_balance_after_second = ctx.token().balance(&ctx.recipient);
     assert_eq!(
         recipient_balance_after_second, recipient_balance_after_first,
@@ -4540,9 +4555,7 @@ fn test_withdraw_when_accrued_equals_withdrawn_zero_withdrawable() {
 }
 
 /// Test withdraw when cancelled with zero accrued
-/// Should panic with "nothing to withdraw"
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_zero_after_immediate_cancel() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
@@ -4554,8 +4567,53 @@ fn test_withdraw_zero_after_immediate_cancel() {
     let state = ctx.client().get_stream_state(&stream_id);
     assert_eq!(state.status, StreamStatus::Cancelled);
 
-    // Try to withdraw - should panic because accrued = 0
-    ctx.client().withdraw(&stream_id);
+    // Try to withdraw - should return 0 because accrued = 0
+    let withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(
+        withdrawn, 0,
+        "should return 0 when cancelled with no accrual"
+    );
+
+    // Verify no state change
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.withdrawn_amount, 0);
+}
+
+/// Test that zero withdrawable is truly idempotent: multiple calls return 0.
+/// Verifies no token transfer, no state change, no events published.
+#[test]
+fn test_withdraw_zero_idempotent_multiple_calls() {
+    let ctx = TestContext::setup();
+    let stream_id = ctx.create_cliff_stream(); // cliff at t=500
+
+    // Before cliff, withdrawable = 0
+    ctx.env.ledger().set_timestamp(100);
+
+    let initial_recipient_balance = ctx.token().balance(&ctx.recipient);
+    let initial_contract_balance = ctx.token().balance(&ctx.contract_id);
+
+    // Call withdraw multiple times
+    for _ in 0..5 {
+        let withdrawn = ctx.client().withdraw(&stream_id);
+        assert_eq!(withdrawn, 0, "should return 0 on every call");
+    }
+
+    // Verify no token transfers occurred
+    assert_eq!(
+        ctx.token().balance(&ctx.recipient),
+        initial_recipient_balance,
+        "recipient balance should not change"
+    );
+    assert_eq!(
+        ctx.token().balance(&ctx.contract_id),
+        initial_contract_balance,
+        "contract balance should not change"
+    );
+
+    // Verify no state change
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.withdrawn_amount, 0);
+    assert_eq!(state.status, StreamStatus::Active);
 }
 
 /// Test that contract correctly calculates withdrawable amount
@@ -4705,16 +4763,17 @@ fn test_withdraw_multiple_partial_no_excess() {
     assert_eq!(state.status, StreamStatus::Completed);
 }
 
-/// Test withdraw with cliff - before cliff returns zero withdrawable
+/// Test withdraw with cliff - before cliff returns zero withdrawable.
+/// Should return 0 without transfer or state change (idempotent).
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_zero_one_second_before_cliff() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_cliff_stream(); // cliff at t=500
 
     // One second before cliff
     ctx.env.ledger().set_timestamp(499);
-    ctx.client().withdraw(&stream_id);
+    let withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(withdrawn, 0, "should return 0 before cliff");
 }
 
 /// Test withdraw exactly at cliff time
@@ -4860,8 +4919,9 @@ fn test_withdraw_status_transition_to_completed() {
 }
 
 /// Test withdraw after cancel and then try to withdraw again
+/// Test withdraw after cancel then all accrued withdrawn.
+/// Should return 0 without transfer or state change (idempotent).
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
 fn test_withdraw_after_cancel_then_completed() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
@@ -4884,9 +4944,10 @@ fn test_withdraw_after_cancel_then_completed() {
     // Advance time substantially; cancelled accrual must remain frozen.
     ctx.env.ledger().set_timestamp(9_999);
 
-    // Try to withdraw again - should panic with "nothing to withdraw"
+    // Try to withdraw again - should return 0 (frozen)
     // because accrued (600) - withdrawn (600) = 0
-    ctx.client().withdraw(&stream_id);
+    let second_withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(second_withdrawn, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -5887,619 +5948,193 @@ fn test_accrual_capped_when_deposit_exceeds_total() {
 }
 
 // ---------------------------------------------------------------------------
-// Tests — Issue #118: create_stream with cliff_time equal to end_time
-//
-// BEHAVIOR DOCUMENTATION:
-//
-// When cliff_time == end_time, the stream is valid (the contract accepts it —
-// cliff_time is required to be in [start_time, end_time] inclusive). The effect
-// is that accrual remains 0 for the entire stream duration and then the full
-// accrued amount (rate * (end - start), capped at deposit_amount) becomes
-// available all at once at the moment current_time >= end_time.
-//
-// This is a "delayed lump-sum" pattern: the recipient cannot withdraw a single
-// token before the stream ends, but after end_time they can withdraw the full
-// streamable amount in one call.
-//
-// Key invariants verified by this suite:
-//  1. Contract accepts cliff_time == end_time without panicking.
-//  2. calculate_accrued returns 0 for any current_time < end_time.
-//  3. At current_time == end_time, calculate_accrued returns the full
-//     streamable amount (min(rate * duration, deposit_amount)).
-//  4. Beyond end_time accrual remains capped (no further growth).
-//  5. Withdraw panics with "nothing to withdraw" for any time < end_time.
-//  6. Withdraw succeeds exactly at end_time and returns the full accrued amount.
-//  7. A single withdraw at end_time transitions the stream to Completed when
-//     withdrawn_amount == deposit_amount.
-//  8. If deposit > rate * duration, only rate * duration is withdrawable; the
-//     excess remains in the contract and the stream still completes correctly.
-//  9. Cancellation before end_time refunds sender in full (0 accrued).
-// 10. Cancellation at or after end_time leaves full accrued for recipient.
+// Tests — Batch create_streams
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
-mod cliff_equals_end {
-    use soroban_sdk::{
-        testutils::{Address as _, Ledger},
-        token::StellarAssetClient,
-        Address, Env,
+use crate::CreateStreamParams;
+use soroban_sdk::vec;
+
+#[test]
+fn test_create_streams_batch_success() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    // Initial balances
+    let initial_sender_balance = ctx.token().balance(&ctx.sender);
+    let initial_contract_balance = ctx.token().balance(&ctx.contract_id);
+
+    // Create 3 streams in one batch
+    let params1 = CreateStreamParams {
+        recipient: Address::generate(&ctx.env),
+        deposit_amount: 1000,
+        rate_per_second: 1,
+        start_time: 0,
+        cliff_time: 0,
+        end_time: 1000,
     };
 
-    use crate::{FluxoraStream, FluxoraStreamClient, StreamStatus};
-
-    // -----------------------------------------------------------------------
-    // Test helpers
-    // -----------------------------------------------------------------------
-
-    struct Ctx<'a> {
-        env: Env,
-        contract_id: Address,
-        token_id: Address,
-        sender: Address,
-        recipient: Address,
-        #[allow(dead_code)]
-        sac: StellarAssetClient<'a>,
-    }
-
-    impl<'a> Ctx<'a> {
-        fn setup() -> Self {
-            let env = Env::default();
-            env.mock_all_auths();
-
-            let contract_id = env.register_contract(None, FluxoraStream);
-            let token_admin = Address::generate(&env);
-            let token_id = env
-                .register_stellar_asset_contract_v2(token_admin.clone())
-                .address();
-
-            let admin = Address::generate(&env);
-            let sender = Address::generate(&env);
-            let recipient = Address::generate(&env);
-
-            let client = FluxoraStreamClient::new(&env, &contract_id);
-            client.init(&token_id, &admin);
-
-            let sac = StellarAssetClient::new(&env, &token_id);
-            sac.mint(&sender, &100_000_i128);
-
-            Ctx {
-                env,
-                contract_id,
-                token_id,
-                sender,
-                recipient,
-                sac,
-            }
-        }
-
-        fn client(&self) -> FluxoraStreamClient<'_> {
-            FluxoraStreamClient::new(&self.env, &self.contract_id)
-        }
-
-        fn token(&self) -> soroban_sdk::token::Client<'_> {
-            soroban_sdk::token::Client::new(&self.env, &self.token_id)
-        }
-
-        /// Create a stream where cliff_time == end_time.
-        ///   start=0, cliff=end, end=1000, rate=1/s, deposit=1000
-        fn create_cliff_at_end_stream(&self) -> u64 {
-            self.env.ledger().set_timestamp(0);
-            self.client().create_stream(
-                &self.sender,
-                &self.recipient,
-                &1000_i128, // deposit
-                &1_i128,    // rate_per_second
-                &0u64,      // start_time
-                &1000u64,   // cliff_time == end_time
-                &1000u64,   // end_time
-            )
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // 1. Contract accepts cliff_time == end_time
-    // -----------------------------------------------------------------------
-
-    /// The contract must not panic when cliff_time == end_time.
-    /// This validates that the inclusive upper bound check allows this edge case.
-    #[test]
-    fn test_cliff_equals_end_stream_creation_succeeds() {
-        let ctx = Ctx::setup();
-        ctx.env.ledger().set_timestamp(0);
-
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        let state = ctx.client().get_stream_state(&stream_id);
-        assert_eq!(state.cliff_time, 1000, "cliff_time must be stored as 1000");
-        assert_eq!(state.end_time, 1000, "end_time must be stored as 1000");
-        assert_eq!(state.cliff_time, state.end_time, "cliff == end in storage");
-        assert_eq!(state.status, StreamStatus::Active);
-        assert_eq!(state.deposit_amount, 1000);
-        assert_eq!(state.withdrawn_amount, 0);
-    }
-
-    /// All stream fields are persisted correctly when cliff == end.
-    #[test]
-    fn test_cliff_equals_end_all_fields_stored_correctly() {
-        let ctx = Ctx::setup();
-        ctx.env.ledger().set_timestamp(0);
-
-        let stream_id = ctx.client().create_stream(
-            &ctx.sender,
-            &ctx.recipient,
-            &5000_i128,
-            &5_i128,
-            &100u64,
-            &1100u64, // cliff == end
-            &1100u64,
-        );
-
-        let state = ctx.client().get_stream_state(&stream_id);
-        assert_eq!(state.sender, ctx.sender);
-        assert_eq!(state.recipient, ctx.recipient);
-        assert_eq!(state.deposit_amount, 5000);
-        assert_eq!(state.rate_per_second, 5);
-        assert_eq!(state.start_time, 100);
-        assert_eq!(state.cliff_time, 1100);
-        assert_eq!(state.end_time, 1100);
-        assert_eq!(state.withdrawn_amount, 0);
-        assert_eq!(state.status, StreamStatus::Active);
-    }
-
-    // -----------------------------------------------------------------------
-    // 2. Accrual is 0 for all current_time < end_time
-    // -----------------------------------------------------------------------
-
-    /// At the very start of the stream, accrued must be 0.
-    #[test]
-    fn test_cliff_equals_end_accrued_zero_at_start() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(0);
-        let accrued = ctx.client().calculate_accrued(&stream_id);
-        assert_eq!(accrued, 0, "nothing accrued at t=0 (before cliff/end)");
-    }
-
-    /// Midway through the stream (before the cliff), accrued must be 0.
-    #[test]
-    fn test_cliff_equals_end_accrued_zero_midstream() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(500);
-        let accrued = ctx.client().calculate_accrued(&stream_id);
-        assert_eq!(accrued, 0, "nothing accrued at t=500 (still before cliff)");
-    }
-
-    /// One second before end_time, accrued must still be 0.
-    #[test]
-    fn test_cliff_equals_end_accrued_zero_one_second_before_end() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(999);
-        let accrued = ctx.client().calculate_accrued(&stream_id);
-        assert_eq!(
-            accrued, 0,
-            "nothing accrued at t=999 (one second before cliff/end)"
-        );
-    }
-
-    /// Accrual remains 0 at every sampled point strictly before end_time.
-    #[test]
-    fn test_cliff_equals_end_accrued_zero_for_all_times_before_end() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        for t in [0u64, 1, 100, 250, 499, 500, 750, 998, 999] {
-            ctx.env.ledger().set_timestamp(t);
-            let accrued = ctx.client().calculate_accrued(&stream_id);
-            assert_eq!(
-                accrued, 0,
-                "accrued must be 0 at t={t} (before cliff/end at 1000)"
-            );
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // 3. Accrual equals full streamable amount at current_time == end_time
-    // -----------------------------------------------------------------------
-
-    /// At exactly end_time, the full accrued amount (rate * duration) is available.
-    #[test]
-    fn test_cliff_equals_end_accrued_full_at_end_time() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(1000);
-        let accrued = ctx.client().calculate_accrued(&stream_id);
-        assert_eq!(accrued, 1000, "full accrual (rate * duration) at end_time");
-    }
-
-    /// With a higher rate, full accrual at end_time equals rate * duration.
-    #[test]
-    fn test_cliff_equals_end_high_rate_full_accrual_at_end() {
-        let ctx = Ctx::setup();
-        ctx.env.ledger().set_timestamp(0);
-
-        let stream_id = ctx.client().create_stream(
-            &ctx.sender,
-            &ctx.recipient,
-            &5000_i128,
-            &5_i128,
-            &0u64,
-            &1000u64, // cliff == end
-            &1000u64,
-        );
-
-        ctx.env.ledger().set_timestamp(1000);
-        let accrued = ctx.client().calculate_accrued(&stream_id);
-        // rate(5) * duration(1000) = 5000 == deposit
-        assert_eq!(accrued, 5000);
-    }
-
-    /// Verify the "instant unlock" behaviour: one instant before end accrual
-    /// is 0, and at end it jumps to the full amount.
-    #[test]
-    fn test_cliff_equals_end_instant_unlock_boundary() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(999);
-        let before = ctx.client().calculate_accrued(&stream_id);
-        assert_eq!(before, 0);
-
-        ctx.env.ledger().set_timestamp(1000);
-        let at_end = ctx.client().calculate_accrued(&stream_id);
-        assert_eq!(at_end, 1000);
-
-        // Difference equals full streamable amount
-        assert_eq!(at_end - before, 1000, "entire amount unlocks in one step");
-    }
-
-    // -----------------------------------------------------------------------
-    // 4. Accrual remains capped beyond end_time
-    // -----------------------------------------------------------------------
-
-    /// After end_time, accrued must not grow further.
-    #[test]
-    fn test_cliff_equals_end_accrued_capped_after_end() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        for t in [1000u64, 1001, 1500, 5000, u64::MAX / 2] {
-            ctx.env.ledger().set_timestamp(t);
-            let accrued = ctx.client().calculate_accrued(&stream_id);
-            assert_eq!(
-                accrued, 1000,
-                "accrued must stay capped at deposit_amount after end_time (t={t})"
-            );
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // 5. Withdraw panics before end_time
-    // -----------------------------------------------------------------------
-
-    /// Attempting to withdraw at t=0 must panic with "nothing to withdraw".
-    #[test]
-    #[should_panic(expected = "nothing to withdraw")]
-    fn test_cliff_equals_end_withdraw_at_start_panics() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(0);
-        ctx.client().withdraw(&stream_id);
-    }
-
-    /// Attempting to withdraw at the midpoint must panic with "nothing to withdraw".
-    #[test]
-    #[should_panic(expected = "nothing to withdraw")]
-    fn test_cliff_equals_end_withdraw_midstream_panics() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(500);
-        ctx.client().withdraw(&stream_id);
-    }
-
-    /// Attempting to withdraw one second before end_time must panic.
-    #[test]
-    #[should_panic(expected = "nothing to withdraw")]
-    fn test_cliff_equals_end_withdraw_one_second_before_end_panics() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(999);
-        ctx.client().withdraw(&stream_id);
-    }
-
-    // -----------------------------------------------------------------------
-    // 6. Withdraw succeeds at end_time and returns full accrued amount
-    // -----------------------------------------------------------------------
-
-    /// Withdraw at exactly end_time must return the full streamable amount.
-    #[test]
-    fn test_cliff_equals_end_withdraw_at_end_time_succeeds() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(1000);
-        let amount = ctx.client().withdraw(&stream_id);
-
-        assert_eq!(amount, 1000, "full amount unlocked at end_time");
-        assert_eq!(ctx.token().balance(&ctx.recipient), 1000);
-    }
-
-    /// Withdraw one second past end_time should also succeed (accrual was capped at end).
-    #[test]
-    fn test_cliff_equals_end_withdraw_after_end_time_succeeds() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(1001);
-        let amount = ctx.client().withdraw(&stream_id);
-        assert_eq!(amount, 1000, "full amount still available after end_time");
-    }
-
-    // -----------------------------------------------------------------------
-    // 7. Single withdraw at end_time transitions stream to Completed
-    // -----------------------------------------------------------------------
-
-    /// When deposit == rate * duration, one withdraw at end_time marks Completed.
-    #[test]
-    fn test_cliff_equals_end_withdraw_completes_stream() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(1000);
-        ctx.client().withdraw(&stream_id);
-
-        let state = ctx.client().get_stream_state(&stream_id);
-        assert_eq!(state.status, StreamStatus::Completed);
-        assert_eq!(state.withdrawn_amount, 1000);
-        assert_eq!(state.deposit_amount, 1000);
-    }
-
-    /// After completing via withdraw at end_time, a second withdraw panics.
-    #[test]
-    #[should_panic(expected = "stream already completed")]
-    fn test_cliff_equals_end_second_withdraw_after_complete_panics() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(1000);
-        ctx.client().withdraw(&stream_id);
-        ctx.client().withdraw(&stream_id); // must panic
-    }
-
-    // -----------------------------------------------------------------------
-    // 8. Excess deposit — only rate * duration is withdrawable
-    // -----------------------------------------------------------------------
-
-    /// When deposit > rate * duration, only rate * duration is withdrawable.
-    /// The excess is locked in the contract but the stream still completes.
-    #[test]
-    fn test_cliff_equals_end_excess_deposit_only_streamable_amount_withdrawn() {
-        let ctx = Ctx::setup();
-        ctx.env.ledger().set_timestamp(0);
-
-        // deposit 2000 but rate(1) * duration(1000) = 1000; excess = 1000
-        let stream_id = ctx.client().create_stream(
-            &ctx.sender,
-            &ctx.recipient,
-            &2000_i128, // deposit > total streamable
-            &1_i128,
-            &0u64,
-            &1000u64, // cliff == end
-            &1000u64,
-        );
-
-        ctx.env.ledger().set_timestamp(1000);
-        let accrued = ctx.client().calculate_accrued(&stream_id);
-        assert_eq!(accrued, 1000, "accrued is capped at rate * duration");
-
-        let amount = ctx.client().withdraw(&stream_id);
-        assert_eq!(
-            amount, 1000,
-            "only rate * duration is withdrawable, not deposit"
-        );
-
-        // Excess 1000 remains in contract; stream is NOT Completed because
-        // withdrawn_amount (1000) != deposit_amount (2000)
-        let state = ctx.client().get_stream_state(&stream_id);
-        assert_eq!(state.withdrawn_amount, 1000);
-        assert_eq!(state.deposit_amount, 2000);
-        // Status stays Active (withdrawn_amount < deposit_amount)
-        assert_eq!(state.status, StreamStatus::Active);
-
-        // Contract holds the excess 1000
-        assert_eq!(ctx.token().balance(&ctx.contract_id), 1000);
-        assert_eq!(ctx.token().balance(&ctx.recipient), 1000);
-    }
-
-    // -----------------------------------------------------------------------
-    // 9. Cancellation before end_time — full refund (0 accrued)
-    // -----------------------------------------------------------------------
-
-    /// Cancellation before end_time refunds the sender fully (accrued = 0).
-    #[test]
-    fn test_cliff_equals_end_cancel_before_end_full_refund_to_sender() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        let sender_before = ctx.token().balance(&ctx.sender);
-
-        ctx.env.ledger().set_timestamp(500);
-        ctx.client().cancel_stream(&stream_id);
-
-        let sender_after = ctx.token().balance(&ctx.sender);
-        assert_eq!(
-            sender_after - sender_before,
-            1000,
-            "full deposit refunded when cancelled before cliff"
-        );
-
-        let state = ctx.client().get_stream_state(&stream_id);
-        assert_eq!(state.status, StreamStatus::Cancelled);
-
-        // Contract holds nothing
-        assert_eq!(ctx.token().balance(&ctx.contract_id), 0);
-    }
-
-    /// Recipient gets nothing after cancellation before end_time.
-    #[test]
-    #[should_panic(expected = "nothing to withdraw")]
-    fn test_cliff_equals_end_cancel_before_end_recipient_cannot_withdraw() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(999);
-        ctx.client().cancel_stream(&stream_id);
-
-        // Accrued at cancellation was 0; recipient has nothing to claim
-        ctx.client().withdraw(&stream_id);
-    }
-
-    // -----------------------------------------------------------------------
-    // 10. Cancellation at/after end_time — full accrued stays for recipient
-    // -----------------------------------------------------------------------
-
-    /// Cancellation exactly at end_time: sender gets 0 refund, recipient can
-    /// withdraw the full streamable amount.
-    #[test]
-    fn test_cliff_equals_end_cancel_at_end_time_no_sender_refund() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        let sender_before = ctx.token().balance(&ctx.sender);
-
-        ctx.env.ledger().set_timestamp(1000);
-        ctx.client().cancel_stream(&stream_id);
-
-        let sender_after = ctx.token().balance(&ctx.sender);
-        assert_eq!(
-            sender_after, sender_before,
-            "no refund when cancelled at end_time (fully accrued)"
-        );
-
-        // Contract holds 1000 for recipient
-        assert_eq!(ctx.token().balance(&ctx.contract_id), 1000);
-    }
-
-    /// After cancellation at end_time, recipient can withdraw the full amount.
-    #[test]
-    fn test_cliff_equals_end_cancel_at_end_time_recipient_withdraws_full() {
-        let ctx = Ctx::setup();
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(1000);
-        ctx.client().cancel_stream(&stream_id);
-
-        let withdrawn = ctx.client().withdraw(&stream_id);
-        assert_eq!(withdrawn, 1000);
-        assert_eq!(ctx.token().balance(&ctx.recipient), 1000);
-        assert_eq!(ctx.token().balance(&ctx.contract_id), 0);
-    }
-
-    // -----------------------------------------------------------------------
-    // Additional: balance conservation invariant
-    // -----------------------------------------------------------------------
-
-    /// Total tokens in the system (sender + recipient + contract) must be
-    /// conserved through the full lifecycle of a cliff-at-end stream.
-    #[test]
-    fn test_cliff_equals_end_token_conservation() {
-        let ctx = Ctx::setup();
-
-        let total_initial = ctx.token().balance(&ctx.sender)
-            + ctx.token().balance(&ctx.recipient)
-            + ctx.token().balance(&ctx.contract_id);
-
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        // Conservation after creation
-        let total_after_create = ctx.token().balance(&ctx.sender)
-            + ctx.token().balance(&ctx.recipient)
-            + ctx.token().balance(&ctx.contract_id);
-        assert_eq!(total_after_create, total_initial);
-
-        // Conservation after withdraw at end_time
-        ctx.env.ledger().set_timestamp(1000);
-        ctx.client().withdraw(&stream_id);
-
-        let total_after_withdraw = ctx.token().balance(&ctx.sender)
-            + ctx.token().balance(&ctx.recipient)
-            + ctx.token().balance(&ctx.contract_id);
-        assert_eq!(total_after_withdraw, total_initial);
-    }
-
-    /// Token conservation through: create → cancel (at end) → recipient withdraw.
-    #[test]
-    fn test_cliff_equals_end_token_conservation_cancel_path() {
-        let ctx = Ctx::setup();
-
-        let total_initial = ctx.token().balance(&ctx.sender)
-            + ctx.token().balance(&ctx.recipient)
-            + ctx.token().balance(&ctx.contract_id);
-
-        let stream_id = ctx.create_cliff_at_end_stream();
-
-        ctx.env.ledger().set_timestamp(1000);
-        ctx.client().cancel_stream(&stream_id);
-        ctx.client().withdraw(&stream_id);
-
-        let total_final = ctx.token().balance(&ctx.sender)
-            + ctx.token().balance(&ctx.recipient)
-            + ctx.token().balance(&ctx.contract_id);
-        assert_eq!(total_final, total_initial);
-    }
-
-    // -----------------------------------------------------------------------
-    // Accrual module unit-level tests (pure function)
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_accrual_cliff_equals_end_zero_before_end() {
-        use crate::accrual::calculate_accrued_amount;
-
-        // start=0, cliff=1000, end=1000, rate=1, deposit=1000
-        for t in [0u64, 1, 100, 500, 999] {
-            let accrued = calculate_accrued_amount(0, 1000, 1000, 1, 1000, t);
-            assert_eq!(accrued, 0, "must be 0 at t={t}");
-        }
-    }
-
-    #[test]
-    fn test_accrual_cliff_equals_end_full_at_end() {
-        use crate::accrual::calculate_accrued_amount;
-
-        let accrued = calculate_accrued_amount(0, 1000, 1000, 1, 1000, 1000);
-        assert_eq!(accrued, 1000, "full accrual at t=end_time");
-    }
-
-    #[test]
-    fn test_accrual_cliff_equals_end_capped_after_end() {
-        use crate::accrual::calculate_accrued_amount;
-
-        for t in [1001u64, 2000, u64::MAX] {
-            let accrued = calculate_accrued_amount(0, 1000, 1000, 1, 1000, t);
-            assert_eq!(accrued, 1000, "capped at deposit after end (t={t})");
-        }
-    }
-
-    #[test]
-    fn test_accrual_cliff_equals_end_non_zero_start_time() {
-        use crate::accrual::calculate_accrued_amount;
-
-        // start=500, cliff=1500, end=1500, rate=2, deposit=2000
-        // rate * duration = 2 * 1000 = 2000 == deposit
-        for t in [500u64, 600, 1000, 1499] {
-            let a = calculate_accrued_amount(500, 1500, 1500, 2, 2000, t);
-            assert_eq!(a, 0, "must be 0 at t={t} (before cliff/end)");
-        }
-        let at_end = calculate_accrued_amount(500, 1500, 1500, 2, 2000, 1500);
-        assert_eq!(at_end, 2000, "full accrual at t=end_time");
-    }
+    let params2 = CreateStreamParams {
+        recipient: Address::generate(&ctx.env),
+        deposit_amount: 2000,
+        rate_per_second: 2,
+        start_time: 100,
+        cliff_time: 200,
+        end_time: 1100,
+    };
+
+    let params3 = CreateStreamParams {
+        recipient: Address::generate(&ctx.env),
+        deposit_amount: 3000,
+        rate_per_second: 3,
+        start_time: 500,
+        cliff_time: 500,
+        end_time: 1500,
+    };
+
+    let streams = vec![&ctx.env, params1.clone(), params2.clone(), params3.clone()];
+    let stream_ids = ctx.client().create_streams(&ctx.sender, &streams);
+
+    // Check returned IDs
+    assert_eq!(stream_ids.len(), 3);
+    assert_eq!(stream_ids.get(0).unwrap(), 0);
+    assert_eq!(stream_ids.get(1).unwrap(), 1);
+    assert_eq!(stream_ids.get(2).unwrap(), 2);
+
+    // Verify balances (6000 total tokens transferred)
+    assert_eq!(
+        ctx.token().balance(&ctx.sender),
+        initial_sender_balance - 6000
+    );
+    assert_eq!(
+        ctx.token().balance(&ctx.contract_id),
+        initial_contract_balance + 6000
+    );
+
+    // Verify stored states
+    let state1 = ctx.client().get_stream_state(&0);
+    assert_eq!(state1.deposit_amount, 1000);
+    assert_eq!(state1.recipient, params1.recipient);
+
+    let state2 = ctx.client().get_stream_state(&1);
+    assert_eq!(state2.deposit_amount, 2000);
+    assert_eq!(state2.rate_per_second, 2);
+
+    let state3 = ctx.client().get_stream_state(&2);
+    assert_eq!(state3.deposit_amount, 3000);
+    assert_eq!(state3.end_time, 1500);
+}
+
+#[test]
+#[should_panic(expected = "deposit_amount must cover total streamable amount")]
+fn test_create_streams_batch_atomic_failure() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    // One valid stream, one invalid stream
+    let valid_params = CreateStreamParams {
+        recipient: Address::generate(&ctx.env),
+        deposit_amount: 1000,
+        rate_per_second: 1,
+        start_time: 0,
+        cliff_time: 0,
+        end_time: 1000,
+    };
+
+    let invalid_params = CreateStreamParams {
+        recipient: Address::generate(&ctx.env),
+        deposit_amount: 500, // Insufficient deposit (1 * 1000 = 1000 needed)
+        rate_per_second: 1,
+        start_time: 0,
+        cliff_time: 0,
+        end_time: 1000,
+    };
+
+    let streams = vec![&ctx.env, valid_params, invalid_params];
+
+    // This should panic due to the invalid parameter in the second stream.
+    // Because Soroban state changes revert on panic, the first stream won't be saved.
+    ctx.client().create_streams(&ctx.sender, &streams);
+}
+
+#[test]
+#[should_panic(expected = "sender and recipient must be different")]
+fn test_create_streams_batch_sender_recipient_panic() {
+    let ctx = TestContext::setup();
+
+    let params = CreateStreamParams {
+        recipient: ctx.sender.clone(), // Invalid: recipient == sender
+        deposit_amount: 1000,
+        rate_per_second: 1,
+        start_time: 0,
+        cliff_time: 0,
+        end_time: 1000,
+    };
+
+    let streams = vec![&ctx.env, params];
+    ctx.client().create_streams(&ctx.sender, &streams);
+}
+
+#[test]
+fn test_create_streams_batch_empty() {
+    let ctx = TestContext::setup();
+    let streams = Vec::new(&ctx.env);
+
+    let initial_balance = ctx.token().balance(&ctx.sender);
+
+    let ids = ctx.client().create_streams(&ctx.sender, &streams);
+
+    // Should return empty vec, charge no tokens, and not advance ID counter
+    assert_eq!(ids.len(), 0);
+    assert_eq!(ctx.token().balance(&ctx.sender), initial_balance);
+
+    // Next standard create_stream should get ID 0
+    let next_id = ctx.create_default_stream();
+    assert_eq!(next_id, 0);
+}
+
+#[test]
+fn test_create_streams_batch_strict_auth() {
+    let ctx = TestContext::setup_strict();
+
+    let params1 = CreateStreamParams {
+        recipient: Address::generate(&ctx.env),
+        deposit_amount: 1000,
+        rate_per_second: 1,
+        start_time: 0,
+        cliff_time: 0,
+        end_time: 1000,
+    };
+
+    let params2 = CreateStreamParams {
+        recipient: Address::generate(&ctx.env),
+        deposit_amount: 2000,
+        rate_per_second: 1,
+        start_time: 0,
+        cliff_time: 0,
+        end_time: 2000,
+    };
+
+    let streams = vec![&ctx.env, params1.clone(), params2.clone()];
+
+    use soroban_sdk::{testutils::MockAuth, testutils::MockAuthInvoke, IntoVal};
+
+    // Mock the sender's auth EXACTLY ONCE for the bulk operation
+    ctx.env.mock_auths(&[MockAuth {
+        address: &ctx.sender,
+        invoke: &MockAuthInvoke {
+            contract: &ctx.contract_id,
+            fn_name: "create_streams",
+            args: (&ctx.sender, streams.clone()).into_val(&ctx.env),
+            sub_invokes: &[MockAuthInvoke {
+                contract: &ctx.token_id,
+                fn_name: "transfer",
+                // Total deposit = 1000 + 2000 = 3000
+                args: (&ctx.sender, &ctx.contract_id, 3000_i128).into_val(&ctx.env),
+                sub_invokes: &[],
+            }],
+        },
+    }]);
+
+    let stream_ids = ctx.client().create_streams(&ctx.sender, &streams);
+    assert_eq!(stream_ids.len(), 2);
 }
