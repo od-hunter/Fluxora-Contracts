@@ -4571,7 +4571,10 @@ fn test_withdraw_zero_after_immediate_cancel() {
 
     // Try to withdraw - should return 0 because accrued = 0
     let withdrawn = ctx.client().withdraw(&stream_id);
-    assert_eq!(withdrawn, 0, "should return 0 when cancelled with no accrual");
+    assert_eq!(
+        withdrawn, 0,
+        "should return 0 when cancelled with no accrual"
+    );
 
     // Verify no state change
     let state = ctx.client().get_stream_state(&stream_id);
