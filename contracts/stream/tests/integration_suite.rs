@@ -1007,7 +1007,10 @@ fn integration_pause_resume_withdraw_lifecycle() {
 
     let state = ctx.client().get_stream_state(&stream_id);
     assert_eq!(state.status, StreamStatus::Paused);
-    assert_eq!(state.withdrawn_amount, 0, "no withdrawals should occur during pause");
+    assert_eq!(
+        state.withdrawn_amount, 0,
+        "no withdrawals should occur during pause"
+    );
 
     // -----------------------------------------------------------------------
     // Phase 3: Advance to t=700 while paused, verify accrual continues
@@ -1016,7 +1019,10 @@ fn integration_pause_resume_withdraw_lifecycle() {
 
     // Verify accrual continues during pause (time-based, not status-based)
     let accrued_at_700 = ctx.client().calculate_accrued(&stream_id);
-    assert_eq!(accrued_at_700, 700, "accrual must continue during pause period");
+    assert_eq!(
+        accrued_at_700, 700,
+        "accrual must continue during pause period"
+    );
 
     // Attempt to withdraw while paused — should fail
     let withdrawal_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1143,7 +1149,10 @@ fn integration_multiple_pause_resume_cycles() {
 
     ctx.env.ledger().set_timestamp(1800);
     let accrued_at_1800 = ctx.client().calculate_accrued(&stream_id);
-    assert_eq!(accrued_at_1800, 1800, "accrual continues through multiple pauses");
+    assert_eq!(
+        accrued_at_1800, 1800,
+        "accrual continues through multiple pauses"
+    );
 
     ctx.client().resume_stream(&stream_id);
     let state = ctx.client().get_stream_state(&stream_id);
