@@ -16,6 +16,14 @@ const INSTANCE_BUMP_AMOUNT: u32 = 120_960;
 const PERSISTENT_LIFETIME_THRESHOLD: u32 = 17_280;
 /// Extend persistent entries to ~7 days of ledgers.
 const PERSISTENT_BUMP_AMOUNT: u32 = 120_960;
+// Contract version
+// ---------------------------------------------------------------------------
+
+/// Compile-time contract version number.
+///
+/// Increment this constant whenever a breaking change is deployed so that
+/// frontends and scripts can detect which version is running on-chain.
+pub const CONTRACT_VERSION: u32 = 1;
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -906,6 +914,24 @@ impl FluxoraStream {
     ///   - `Cancelled`: Terminated early, unstreamed tokens refunded, terminal state
     pub fn get_stream_state(env: Env, stream_id: u64) -> Stream {
         load_stream(&env, stream_id).expect("stream not found")
+    }
+
+    /// Return the contract version number.
+    ///
+    /// Reads the compile-time `CONTRACT_VERSION` constant — no storage access required.
+    /// Frontends and deployment scripts can call this to confirm which version of the
+    /// contract is currently deployed before interacting with it.
+    ///
+    /// # Returns
+    /// - `u32`: The current contract version (currently `1`)
+    ///
+    /// # Usage Notes
+    /// - This is a view function (read-only, no state changes)
+    /// - No authorization required (public information)
+    /// - Version is a compile-time constant; calling this costs minimal gas
+    /// - Increment `CONTRACT_VERSION` and redeploy when introducing breaking changes
+    pub fn version(_env: Env) -> u32 {
+        CONTRACT_VERSION
     }
 
     /// Internal helper to check authorization for sender or admin.
