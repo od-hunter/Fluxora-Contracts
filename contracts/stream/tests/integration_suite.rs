@@ -2,6 +2,7 @@ extern crate std;
 
 use fluxora_stream::{FluxoraStream, FluxoraStreamClient, StreamStatus};
 use soroban_sdk::{
+    log,
     testutils::{Address as _, Ledger},
     token::{Client as TokenClient, StellarAssetClient},
     Address, Env,
@@ -1190,7 +1191,7 @@ fn test_create_many_streams_from_same_sender() {
 
     let counter_stop = 50;
     let mut counter = 0;
-    let mut stream_vec = Vec::new(&ctx.env);
+    let mut stream_vec = std::vec::Vec::new();
     let deposit = 10_i128;
     let rate = 1_i128;
     let start = 0u64;
@@ -1223,7 +1224,7 @@ fn test_create_many_streams_from_same_sender() {
 
         counter += 1;
 
-        stream_vec.push_back(stream_id);
+        stream_vec.push(stream_id);
         if counter == counter_stop {
             break;
         }
